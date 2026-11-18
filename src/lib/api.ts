@@ -59,6 +59,18 @@ export function clearToken() {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
+/**
+ * Called by apiFetch whenever an authenticated request returns 401.
+ * AuthProvider registers a handler via setOnUnauthorized() so it can clear
+ * the session and redirect to /login?next= without api.ts depending on React
+ * or the router (#225).
+ */
+let _onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(handler: (() => void) | null): void {
+  _onUnauthorized = handler;
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -113,7 +125,12 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     const message = Array.isArray(payload?.message)
       ? payload.message.join(', ')
       : (payload?.message ?? res.statusText);
-    throw new ApiError(message, res.status);
+    const err = new ApiError(message, res.status);
+    if (res.status === 401 && auth) {
+      clearToken();
+      _onUnauthorized?.();
+    }
+    throw err;
   }
 
   if (res.status === 204) return undefined as T;
