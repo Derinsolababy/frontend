@@ -1,7 +1,8 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { apiFetch, clearToken, getToken, isUnauthorized, setToken } from './api';
+import { useRouter, usePathname } from 'next/navigation';
+import { apiFetch, clearToken, getToken, setOnUnauthorized, setToken } from './api';
 import type { Me } from './types';
 
 interface AuthResponse {
@@ -23,6 +24,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
 
   const refresh = useCallback(async () => {
     // No stored token: we're signed out, so skip the /users/me round-trip
@@ -34,11 +37,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await apiFetch<Me>('/users/me');
       setUser(me);
-    } catch (err) {
-      // A 401 means the stored JWT is expired or invalid: drop it so later
-      // requests stop sending a dead Authorization header (#42). Other
-      // failures (network, 5xx) keep the token — the session may be fine.
-      if (isUnauthorized(err)) clearToken();
+    } catch {
+      // apiFetch already clears the token and fires onUnauthorized on 401.
+      // Other failures (network, 5xx) keep the token — the session may be fine.
       setUser(null);
     }
   }, []);
@@ -50,6 +51,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     void run();
   }, [refresh]);
+
+  // Register the apiFetch 401 handler so any authenticated request that gets
+  // a 401 outside of AuthProvider's own refresh() call also clears the session
+  // and bounces the user to /login?next= (#225).
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setUser(null);
+      const next = encodeURIComponent(pathname ?? '/');
+      router.replace(`/login?next=${next}`);
+    });
+    return () => setOnUnauthorized(null);
+  }, [router, pathname]);
 
   const login = useCallback(
     async (email: string, password: string) => {
