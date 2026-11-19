@@ -167,7 +167,7 @@ export default function VerifyPage() {
             <dd>{result.eventName}</dd>
             <dt className="text-muted">Tier / seat</dt>
             <dd>
-              {result.tier} · {result.seat}
+              {result.tier}{result.seat?.trim() ? ` · Seat ${result.seat}` : ' · General admission'}
             </dd>
             <dt className="text-muted">Owner</dt>
             <dd>{result.ownerName}</dd>
