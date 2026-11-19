@@ -2,7 +2,7 @@ import { resolveEnv } from './env';
 import { WalletError } from './wallet';
 
 const API_URL = resolveEnv('NEXT_PUBLIC_API_URL', process.env.NEXT_PUBLIC_API_URL, 'http://localhost:3000');
-const TOKEN_KEY = 'stellartickets.token';
+export const TOKEN_KEY = 'stellartickets.token';
 
 export class ApiError extends Error {
   constructor(
