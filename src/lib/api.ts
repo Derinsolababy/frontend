@@ -99,9 +99,27 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   // Combine the caller's signal with the timeout so a stalled backend can't
   // leave the UI in a loading state forever (#54).
+  // AbortSignal.any is Safari 17.4+ / Firefox 124+; use a manual fallback so
+  // the documented Safari 16.4 floor stays intact (#436).
   const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
   const signals = [signal, timeoutSignal].filter((s): s is AbortSignal => s !== undefined);
-  const combined = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+  let combined: AbortSignal | undefined;
+  if (signals.length === 0) {
+    combined = undefined;
+  } else if (signals.length === 1) {
+    combined = signals[0];
+  } else if (typeof AbortSignal.any === 'function') {
+    combined = AbortSignal.any(signals);
+  } else {
+    // Manual polyfill: create a controller and abort it when either source fires.
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    for (const s of signals) {
+      if (s.aborted) { controller.abort(); break; }
+      s.addEventListener('abort', abort, { once: true });
+    }
+    combined = controller.signal;
+  }
 
   let res: Response;
   try {
