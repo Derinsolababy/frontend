@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { apiFetch, clearToken, getToken, isUnauthorized, setToken, TOKEN_KEY } from './api';
 import { useRouter, usePathname } from 'next/navigation';
 import { apiFetch, clearToken, getToken, setOnUnauthorized, setToken } from './api';
 import type { Me } from './types';
@@ -52,6 +53,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void run();
   }, [refresh]);
 
+  // Sync auth state across browser tabs: when another tab logs in or out it
+  // writes/removes the token key in localStorage, which fires a 'storage'
+  // event in every *other* tab. We re-evaluate the session so the UI matches.
+  useEffect(() => {
+    function handleStorage(e: StorageEvent) {
+      if (e.key !== TOKEN_KEY) return;
+      if (e.newValue === null) {
+        // Token removed in another tab — sign out here too.
+        setUser(null);
+      } else {
+        // Token added or replaced in another tab — refresh to pick up the new user.
+        void refresh();
+      }
+    }
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [refresh]);
   // Register the apiFetch 401 handler so any authenticated request that gets
   // a 401 outside of AuthProvider's own refresh() call also clears the session
   // and bounces the user to /login?next= (#225).
