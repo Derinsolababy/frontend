@@ -158,6 +158,27 @@ describe('My tickets actions (#313)', () => {
   });
 });
 
+// ── Issue #16: GA seat label ──────────────────────────────────────────────────
+
+describe('My tickets seat label (#16)', () => {
+  it('renders "Seat A1" for a ticket with a seat value', async () => {
+    await render([ticket({ seat: 'A1' })]);
+    expect(container.textContent).toContain('Seat A1');
+    expect(container.textContent).not.toContain('General admission');
+  });
+
+  it('renders "General admission" for a ticket with an empty seat string', async () => {
+    await render([ticket({ seat: '' })]);
+    expect(container.textContent).toContain('General admission');
+    expect(container.textContent).not.toMatch(/Seat\s*$/m);
+  });
+
+  it('renders "General admission" for a ticket with a whitespace-only seat string', async () => {
+    await render([ticket({ seat: '   ' })]);
+    expect(container.textContent).toContain('General admission');
+  });
+});
+
 describe('My tickets wallet rejections (#232)', () => {
   it('shows the wallet message when a transfer signature is rejected', async () => {
     signTransaction.mockRejectedValue(new WalletError('You declined the transfer in Freighter'));
