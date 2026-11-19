@@ -319,7 +319,7 @@ export default function MyTicketsPage() {
                 <div>
                   <p className="font-medium">{ticket.event?.name}</p>
                   <p className="text-sm text-muted">
-                    {ticket.ticketType?.name} · Seat {ticket.seat}
+                    {ticket.ticketType?.name} · {ticket.seat?.trim() ? `Seat ${ticket.seat}` : 'General admission'}
                   </p>
                   {ticket.event && (
                     <p className="text-sm text-muted">
