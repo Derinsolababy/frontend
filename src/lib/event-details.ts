@@ -68,18 +68,30 @@ const EXPLORER_NETWORK: Record<string, string> = {
   testnet: 'testnet',
   mainnet: 'public',
   public: 'public',
+  futurenet: 'futurenet',
 };
 
 /**
  * stellar.expert link to the ticketing contract the event lives in, or null
- * when the contract id isn't configured or the network has no explorer.
+ * when the contract id isn't configured. Logs a warning for unrecognised
+ * network names so misconfigured deployments are visible in the console
+ * instead of silently dropping the on-chain verification link (#448).
  */
 export function ticketingContractUrl(
   contractId: string | undefined,
   network: string | undefined,
 ): string | null {
-  const explorerNetwork = EXPLORER_NETWORK[(network ?? 'testnet').toLowerCase()];
-  if (!contractId || !explorerNetwork) return null;
+  if (!contractId) return null;
+  const key = (network ?? '').toLowerCase();
+  const explorerNetwork = EXPLORER_NETWORK[key];
+  if (!explorerNetwork) {
+    console.warn(
+      `ticketingContractUrl: unrecognised network "${network}". ` +
+      `Expected one of: ${Object.keys(EXPLORER_NETWORK).join(', ')}. ` +
+      `The on-chain verification link will not be shown.`,
+    );
+    return null;
+  }
   return `https://stellar.expert/explorer/${explorerNetwork}/contract/${encodeURIComponent(contractId)}`;
 }
 
