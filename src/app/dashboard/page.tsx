@@ -144,7 +144,9 @@ export default function DashboardPage() {
             aria-describedby="slug-help"
           />
           <FieldHint id="slug-help">
-            {slug ? `stellartickets.netlify.app/${slug}` : 'This will form your organization’s URL.'}
+            {slug
+              ? `Your organization identifier: ${slug} — lowercase letters, numbers and hyphens only.`
+              : ‘A short, unique identifier for your organization — lowercase letters, numbers and hyphens.’}
           </FieldHint>
           {slugError && <span className="text-xs text-danger">{slugError}</span>}
         </FormField>
