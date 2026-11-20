@@ -25,6 +25,7 @@ export default function MarketplacePage() {
     if (!user) return;
     apiFetch<ResaleListing[]>('/tickets/resale')
       .then(setListings)
+      .catch((err) => setError(getErrorMessage(err, 'Could not load resale listings.')))
       .finally(() => setLoadingListings(false));
   }, [user]);
 
