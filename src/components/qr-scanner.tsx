@@ -35,7 +35,7 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
   useEffect(() => {
     let cancelled = false;
     let stream: MediaStream | null = null;
-    let frame = 0;
+    let frame: ReturnType<typeof setTimeout> | undefined;
 
     async function start() {
       if (!window.isSecureContext) {
@@ -79,6 +79,9 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
       canvas.height = Math.round((SCAN_WIDTH * 9) / 16);
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+      // ~8 scans/second — QR decoding gains nothing from 60 fps.
+      const SCAN_INTERVAL_MS = 120;
+
       async function scan() {
         if (cancelled || !video) return;
         let text: string | null = null;
@@ -87,7 +90,13 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
             if (detector) {
               text = (await detector.detect(video))[0]?.rawValue ?? null;
             } else if (jsQR && ctx) {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const vw = video.videoWidth || SCAN_WIDTH;
+              const vh = video.videoHeight || canvas.height;
+              // Centre-crop: decode the middle square where the user aims the QR.
+              const cropSize = Math.min(vw, vh);
+              const sx = (vw - cropSize) / 2;
+              const sy = (vh - cropSize) / 2;
+              ctx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, canvas.width, canvas.height);
               const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
               text = jsQR(img.data, img.width, img.height)?.data ?? null;
             }
@@ -100,7 +109,7 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
           onDetectedRef.current(text);
           return;
         }
-        frame = requestAnimationFrame(() => void scan());
+        frame = window.setTimeout(() => void scan(), SCAN_INTERVAL_MS);
       }
       void scan();
     }
@@ -109,7 +118,7 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(frame);
+      clearTimeout(frame);
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, []);
