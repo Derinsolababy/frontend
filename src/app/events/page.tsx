@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, getErrorMessage } from '@/lib/api';
-import { EVENTS_PAGE_SIZE, formatEventDate } from '@/lib/events';
+import { EVENTS_PAGE_SIZE } from '@/lib/events';
+import { formatEventDate } from '@/lib/event-details';
 import type { EventRecord, Paginated } from '@/lib/types';
 import { FormError } from '@/components/form-error';
 import { Button } from '@/components/button';
