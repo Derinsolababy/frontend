@@ -48,7 +48,7 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
       }
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: { facingMode: 'environment', width: { ideal: 1280 } },
         });
       } catch (err) {
         if (!cancelled) setError(cameraErrorMessage(err));
@@ -71,7 +71,12 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
         .BarcodeDetector;
       const detector = Detector ? new Detector({ formats: ['qr_code'] }) : null;
       const jsQR = detector ? null : (await import('jsqr')).default;
+
+      // Fixed-size downscale canvas — created once, never resized per frame.
+      const SCAN_WIDTH = 640;
       const canvas = document.createElement('canvas');
+      canvas.width = SCAN_WIDTH;
+      canvas.height = Math.round((SCAN_WIDTH * 9) / 16);
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       async function scan() {
@@ -82,9 +87,7 @@ export function QrScanner({ onDetected }: { onDetected: (code: string) => void }
             if (detector) {
               text = (await detector.detect(video))[0]?.rawValue ?? null;
             } else if (jsQR && ctx) {
-              canvas.width = video.videoWidth;
-              canvas.height = video.videoHeight;
-              ctx.drawImage(video, 0, 0);
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
               text = jsQR(img.data, img.width, img.height)?.data ?? null;
             }
