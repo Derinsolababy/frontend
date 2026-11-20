@@ -3,11 +3,14 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, getErrorMessage } from '@/lib/api';
 import { signAndSubmit } from '@/lib/onchain';
+import { currentWalletAddress } from '@/lib/wallet';
 import { FormError } from '@/components/form-error';
 import { WalletConnectButton } from '@/components/wallet-connect-button';
 import { Button } from '@/components/button';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { describeRevokeTarget } from '@/lib/revoke-confirm';
 import { QrScanner } from '@/components/qr-scanner';
 import { STATUS_LABELS, STATUS_STYLES } from '@/components/status-badge';
 
@@ -29,6 +32,7 @@ export default function VerifyPage() {
   const [checking, setChecking] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
 
   useRequireAuth();
 
@@ -40,7 +44,7 @@ export default function VerifyPage() {
       const res = await apiFetch<VerifyResult>(`/tickets/verify/${encodeURIComponent(ticketCode)}`);
       setResult(res);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not verify this ticket.');
+      setError(getErrorMessage(err, 'Could not verify this ticket.'));
     } finally {
       setChecking(false);
     }
@@ -57,11 +61,26 @@ export default function VerifyPage() {
     void lookup(scanned);
   }
 
+  async function assertWalletMatches(): Promise<boolean> {
+    const freighterAddress = await currentWalletAddress();
+    if (freighterAddress !== user?.stellarPublicKey) {
+      const expected = user?.stellarPublicKey ?? '(none)';
+      const got = freighterAddress ?? '(no wallet connected)';
+      setError(
+        `Wallet mismatch: your account is signed in as ${expected} but Freighter has ${got} selected. ` +
+          `Switch to the correct account in Freighter and try again.`,
+      );
+      return false;
+    }
+    return true;
+  }
+
   async function handleCheckIn() {
     if (!result || !user?.stellarPublicKey) return;
     setError(null);
     setActionBusy(true);
     try {
+      if (!(await assertWalletMatches())) return;
       const { unsignedXdr } = await apiFetch<{ unsignedXdr: string }>(
         `/tickets/${result.ticketId}/check-in`,
         { method: 'POST' },
@@ -74,17 +93,21 @@ export default function VerifyPage() {
       );
       setResult({ ...result, status: 'USED' });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not check in this ticket.');
+      setError(getErrorMessage(err, 'Could not check in this ticket.'));
     } finally {
       setActionBusy(false);
     }
   }
 
+  // #246: revoking is permanent, so the button only opens a confirmation;
+  // the on-chain revoke runs from the dialog's confirm button.
   async function handleRevoke() {
+    setConfirmRevokeOpen(false);
     if (!result || !user?.stellarPublicKey) return;
     setError(null);
     setActionBusy(true);
     try {
+      if (!(await assertWalletMatches())) return;
       const { unsignedXdr } = await apiFetch<{ unsignedXdr: string }>(
         `/tickets/${result.ticketId}/revoke`,
         { method: 'POST' },
@@ -97,7 +120,7 @@ export default function VerifyPage() {
       );
       setResult({ ...result, status: 'REVOKED' });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not revoke this ticket.');
+      setError(getErrorMessage(err, 'Could not revoke this ticket.'));
     } finally {
       setActionBusy(false);
     }
@@ -161,7 +184,7 @@ export default function VerifyPage() {
             <dd>{result.eventName}</dd>
             <dt className="text-muted">Tier / seat</dt>
             <dd>
-              {result.tier} · {result.seat}
+              {result.tier}{result.seat?.trim() ? ` · Seat ${result.seat}` : ' · General admission'}
             </dd>
             <dt className="text-muted">Owner</dt>
             <dd>{result.ownerName}</dd>
@@ -180,7 +203,7 @@ export default function VerifyPage() {
             )}
             {result.status !== 'REVOKED' && (
               <Button
-                onClick={handleRevoke}
+                onClick={() => setConfirmRevokeOpen(true)}
                 loading={actionBusy}
                 variant="danger"
                 className="text-sm"
@@ -190,6 +213,25 @@ export default function VerifyPage() {
             )}
           </div>
         </div>
+      )}
+
+      {result && (
+        <ConfirmDialog
+          open={confirmRevokeOpen}
+          title="Revoke this ticket?"
+          confirmLabel="Revoke ticket"
+          loadingLabel="Revoking…"
+          loading={actionBusy}
+          onConfirm={handleRevoke}
+          onCancel={() => setConfirmRevokeOpen(false)}
+        >
+          <p className="font-medium text-foreground">{describeRevokeTarget(result)}</p>
+          <p className="mt-2">
+            Revocation is recorded on-chain and{' '}
+            <strong className="text-foreground">can&apos;t be undone</strong>: the ticket will
+            no longer be valid for entry, check-in or resale. Your wallet will ask you to sign.
+          </p>
+        </ConfirmDialog>
       )}
     </div>
   );

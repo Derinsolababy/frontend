@@ -1,8 +1,10 @@
 import { resolveEnv } from './env';
+import { WalletError } from './wallet';
 
 function apiUrl(): string {
   return resolveEnv('NEXT_PUBLIC_API_URL', process.env.NEXT_PUBLIC_API_URL, 'http://localhost:3000');
 }
+const API_URL = resolveEnv('NEXT_PUBLIC_API_URL', process.env.NEXT_PUBLIC_API_URL, 'http://localhost:3000');
 export const TOKEN_KEY = 'stellartickets.token';
 
 export class ApiError extends Error {
@@ -18,7 +20,7 @@ export class ApiError extends Error {
 /**
  * The request never got a usable response: it timed out or the network
  * failed. Extends ApiError (status 0) so existing `instanceof ApiError`
- * handling, e.g. actionErrorMessage, surfaces its friendly message.
+ * handling, e.g. getErrorMessage, surfaces its friendly message.
  */
 export class NetworkError extends ApiError {
   constructor(message: string) {
@@ -35,6 +37,18 @@ export function isUnauthorized(err: unknown): boolean {
   return err instanceof ApiError && err.status === 401;
 }
 
+/**
+ * User-facing message for a failed API or wallet action. ApiError and
+ * WalletError messages are actionable (rejected Freighter popup, wrong network,
+ * validation); anything else, or an empty message, falls back to `fallback`.
+ */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  if ((err instanceof ApiError || err instanceof WalletError) && err.message) {
+    return err.message;
+  }
+  return fallback;
+}
+
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem(TOKEN_KEY);
@@ -46,6 +60,18 @@ export function setToken(token: string) {
 
 export function clearToken() {
   window.localStorage.removeItem(TOKEN_KEY);
+}
+
+/**
+ * Called by apiFetch whenever an authenticated request returns 401.
+ * AuthProvider registers a handler via setOnUnauthorized() so it can clear
+ * the session and redirect to /login?next= without api.ts depending on React
+ * or the router (#225).
+ */
+let _onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(handler: (() => void) | null): void {
+  _onUnauthorized = handler;
 }
 
 interface RequestOptions {
@@ -65,7 +91,9 @@ function isAbortError(err: unknown): boolean {
 /** Backend BigInt fields (prices, chain ids) arrive as JSON strings/numbers depending on Nest's serializer; kept as strings end-to-end. */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {};
+  // Body-less requests (e.g. GET) skip Content-Type so browsers don't need a CORS preflight.
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   if (auth) {
     const token = getToken();
@@ -74,9 +102,27 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   // Combine the caller's signal with the timeout so a stalled backend can't
   // leave the UI in a loading state forever (#54).
+  // AbortSignal.any is Safari 17.4+ / Firefox 124+; use a manual fallback so
+  // the documented Safari 16.4 floor stays intact (#436).
   const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
   const signals = [signal, timeoutSignal].filter((s): s is AbortSignal => s !== undefined);
-  const combined = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+  let combined: AbortSignal | undefined;
+  if (signals.length === 0) {
+    combined = undefined;
+  } else if (signals.length === 1) {
+    combined = signals[0];
+  } else if (typeof AbortSignal.any === 'function') {
+    combined = AbortSignal.any(signals);
+  } else {
+    // Manual polyfill: create a controller and abort it when either source fires.
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    for (const s of signals) {
+      if (s.aborted) { controller.abort(); break; }
+      s.addEventListener('abort', abort, { once: true });
+    }
+    combined = controller.signal;
+  }
 
   let res: Response;
   try {
@@ -100,7 +146,12 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     const message = Array.isArray(payload?.message)
       ? payload.message.join(', ')
       : (payload?.message ?? res.statusText);
-    throw new ApiError(message, res.status);
+    const err = new ApiError(message, res.status);
+    if (res.status === 401 && auth) {
+      clearToken();
+      _onUnauthorized?.();
+    }
+    throw err;
   }
 
   if (res.status === 204) return undefined as T;

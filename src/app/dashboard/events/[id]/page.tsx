@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, getErrorMessage } from '@/lib/api';
 import { signAndSubmit } from '@/lib/onchain';
 import type { EventRecord, TicketType } from '@/lib/types';
 import { FormError } from '@/components/form-error';
@@ -72,7 +72,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       setTtPrice('');
       setTtQuantity('');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not add the ticket type.');
+      setError(getErrorMessage(err, 'Could not add the ticket type.'));
     } finally {
       setSavingTicketType(false);
     }
@@ -104,11 +104,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         apiFetch(`/events/${id}/confirm-publish`, { method: 'POST', body: { signedXdr } }),
       );
       setNotice('Event published on-chain.');
-      await loadEvent();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not publish this event.');
+      setError(getErrorMessage(err, 'Could not publish this event.'));
     } finally {
       setPublishing(false);
+    }
+    // Reload separately so a network hiccup here never overwrites the success notice.
+    try {
+      await loadEvent();
+    } catch {
+      // non-fatal — the publish succeeded; stale data will refresh on next load
     }
   }
 
@@ -143,11 +148,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       setNotice(`Ticket issued to ${issueEmail}.`);
       setIssueEmail('');
       setIssueSeat('');
-      await loadEvent();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not issue this ticket.');
+      setError(getErrorMessage(err, 'Could not issue this ticket.'));
     } finally {
       setIssuing(false);
+    }
+    // Reload separately so a network hiccup here never overwrites the success notice.
+    try {
+      await loadEvent();
+    } catch {
+      // non-fatal — the ticket was issued; stale data will refresh on next load
     }
   }
 
