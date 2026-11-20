@@ -358,7 +358,7 @@ export default function MyTicketsPage() {
                 </a>
               )}
 
-              {ticket.status === 'VALID' ? (
+              {ticket.status === 'VALID' && ticket.qrSecret ? (
                 <div className="mt-3">
                   <TicketQr value={ticket.qrSecret} />
                   <GateCode secret={ticket.qrSecret} />
