@@ -104,11 +104,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         apiFetch(`/events/${id}/confirm-publish`, { method: 'POST', body: { signedXdr } }),
       );
       setNotice('Event published on-chain.');
-      await loadEvent();
     } catch (err) {
       setError(getErrorMessage(err, 'Could not publish this event.'));
     } finally {
       setPublishing(false);
+    }
+    // Reload separately so a network hiccup here never overwrites the success notice.
+    try {
+      await loadEvent();
+    } catch {
+      // non-fatal — the publish succeeded; stale data will refresh on next load
     }
   }
 
@@ -143,11 +148,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       setNotice(`Ticket issued to ${issueEmail}.`);
       setIssueEmail('');
       setIssueSeat('');
-      await loadEvent();
     } catch (err) {
       setError(getErrorMessage(err, 'Could not issue this ticket.'));
     } finally {
       setIssuing(false);
+    }
+    // Reload separately so a network hiccup here never overwrites the success notice.
+    try {
+      await loadEvent();
+    } catch {
+      // non-fatal — the ticket was issued; stale data will refresh on next load
     }
   }
 
